@@ -18,10 +18,7 @@ on:
 
 jobs:
   build:
-    if: github.event.repository.owner.id == github.event.sender.id
     runs-on: buildjet-8vcpu-ubuntu-2204
-    permissions:
-      contents: write
     
     strategy:
       matrix:
@@ -134,21 +131,4 @@ jobs:
           name: kernel-builds-*
           failOnError: false
 
-      - name: Update Telegram
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.CHAT_ID }}
-          token: ${{ secrets.BOT_TOKEN }}
-          format: html
-          disable_web_page_preview: true
-          message: |
-            <b>Exynoobs Kernel Update</b>
-
-            <b>Build Date:</b> ${{ env.BUILD_DATE }}
-
-            <b>Device:</b> ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }}
-            <b>Kernel:</b> ${{ needs.build.outputs.KERNEL_VER }}
-            <b>Clang:</b> ${{ needs.build.outputs.CLANG_VER }}
-
-            <b><a href="https://github.com/${{ github.repository }}/releases/tag/${{ env.BUILD_REL }}">Download</a></b>
-
+  
