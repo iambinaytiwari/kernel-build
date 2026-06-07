@@ -19,13 +19,13 @@ on:
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    runs-on: namespace-profile-test
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     
     strategy:
       matrix:
-        branches: ['main', 'ksu-next-sus', 'main-oc', 'ksu-next-sus-oc']
+        build: ['Vanilla', 'Vanilla-OC', 'KernelSU-Next', 'KernelSU-Next-OC']
 
     outputs:
       CLANG_VER: ${{ steps.build_kernel.outputs.CLANG_VER }}
@@ -37,24 +37,38 @@ jobs:
 
       - name: Prepare Environment
         run: |
-          mkdir -p ${{ github.workspace }}/builds/${{ matrix.branches }}
+          mkdir -p ${{ github.workspace }}/builds/${{ matrix.build }}
           sudo apt update
           sudo apt install -y libelf-dev dwarves
+          git config --global user.name bot
+          git config --global user.email user@noreply.github.com
 
       - name: Sync Kernel
         run: |
-          cd ${{ github.workspace }}/builds/${{ matrix.branches }}
-          KERNEL_BRANCH=${{ matrix.branches }}
-          git clone --depth=1 -b "${KERNEL_BRANCH/-oc/}" ${{ github.event.inputs.KERNEL_REPO }} kernel
+          cd ${{ github.workspace }}/builds/${{ matrix.build }}
+          git clone -b main ${{ github.event.inputs.KERNEL_REPO }} kernel
           cd kernel
+          if [[ ${{ matrix.build }} == *"KernelSU-Next"* ]]; then
+            KSU_NEXT_URL="https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/stable/kernel/setup.sh"
+            KSU_NEXT_PIN="095f780bf8835e92b51d06fce4afe7733f86a64c"
+            PATCH_URL="https://raw.githubusercontent.com/Enginex0/Super-Builders/refs/heads/main/android13-5.15"
+            git revert --no-edit 3bd648cfcbdcfb4ae5b200a4e2d2382fc7f2810c
+            curl -LSs "${KSU_NEXT_URL}" | bash -s stable
+            cd KernelSU-Next && git fetch origin && git checkout "${KSU_NEXT_PIN}" && cd ..
+            curl -sL "${PATCH_URL}/samsung-fixes/SM-A546E-Oneui7/fix_namespace_context.patch" | patch -p1 -F3 --no-backup-if-mismatch
+            curl -sL "${PATCH_URL}/KernelSU-Next/patches/50_add_susfs_in_gki-android13-5.15.patch" | patch -p1 -F3 --no-backup-if-mismatch
+            curl -sL "${PATCH_URL}/KernelSU-Next/patches/51_enhanced_susfs-android13-5.15.patch" | patch -p1 -F3 --no-backup-if-mismatch
+            curl -sL "${PATCH_URL}/KernelSU-Next/patches/60_zeromount-android13-5.15.patch" | patch -p1 -F3 --no-backup-if-mismatch
+            curl -sL "${PATCH_URL}/KernelSU-Next/patches/70_ksu_safety-kernelsu-next-5.15.patch" | patch -p1 -F3 --no-backup-if-mismatch -d "KernelSU-Next"
+          fi
           git clone --depth=1 -b ${{ github.event.inputs.BUILD_SCRIPT_BRANCH }} ${{ github.event.inputs.BUILD_SCRIPT_REPO }} kernel_build
 
       - name: Build Kernel
         id: build_kernel
         run: |
-          cd ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel
+          cd ${{ github.workspace }}/builds/${{ matrix.build }}/kernel
           chmod +x kernel_build/build.sh
-          if [[ ${{ matrix.branches }} == *"-oc"* ]]; then
+          if [[ ${{ matrix.build }} == *"-OC"* ]]; then
             ./kernel_build/build.sh oc
           else
             ./kernel_build/build.sh
@@ -66,26 +80,18 @@ jobs:
 
       - name: Prepare Artifacts
         run: |
-          cd ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel/kernel_build
-          if [[ ${{ matrix.branches }} == "main-oc" ]]; then
-            mv Kernel_a54x.tar Exynoobs_a54x-oc.tar
-            mv Kernel_a54x.zip Exynoobs_a54x-oc.zip
-          elif [[ ${{ matrix.branches }} == "main" ]]; then
-            mv Kernel_a54x.tar Exynoobs_a54x.tar
-            mv Kernel_a54x.zip Exynoobs_a54x.zip
-          else
-            mv Kernel_a54x.tar Exynoobs_a54x-${{ matrix.branches }}.tar
-            mv Kernel_a54x.zip Exynoobs_a54x-${{ matrix.branches }}.zip
-          fi
+          cd ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build
+          mv Kernel_a54x.tar Exynoobs_a54x-${{ matrix.build }}.tar
+          mv Kernel_a54x.zip Exynoobs_a54x-${{ matrix.build }}.zip
           
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-builds-${{ matrix.branches }}
+          name: kernel-builds-${{ matrix.build }}
           retention-days: 0
           path: |
-            ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel/kernel_build/*.tar
-            ${{ github.workspace }}/builds/${{ matrix.branches }}/kernel/kernel_build/*.zip
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.tar
+            ${{ github.workspace }}/builds/${{ matrix.build }}/kernel/kernel_build/*.zip
 
   release:
     needs: build
@@ -151,4 +157,3 @@ jobs:
             <b>Clang:</b> ${{ needs.build.outputs.CLANG_VER }}
 
             <b><a href="https://github.com/${{ github.repository }}/releases/tag/${{ env.BUILD_REL }}">Download</a></b>
-
